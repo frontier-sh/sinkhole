@@ -1,0 +1,7 @@
+GITHUB_CLIENT_ID=your_github_oauth_app_client_id
+GITHUB_CLIENT_SECRET=your_github_oauth_app_client_secret
+GITHUB_ALLOWED_ORG=your-github-org
+# Optional: restrict to a specific team (format: org/team-slug)
+# GITHUB_ALLOWED_TEAM=your-github-org/your-team
+# Skip GitHub auth entirely (local development only — do NOT set in production)
+# DISABLE_AUTH=true

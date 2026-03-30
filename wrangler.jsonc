@@ -1,0 +1,38 @@
+{
+	"name": "sinkhole",
+	"compatibility_date": "2025-01-01",
+	"main": "./dist/index.js",
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "sinkhole-db",
+			"database_id": "11ea67b4-fbbb-4954-9a6d-fa6fb86c47a0",
+			"migrations_dir": "migrations"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "ATTACHMENTS",
+			"bucket_name": "sinkhole-attachments"
+		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "REALTIME",
+				"class_name": "RealtimeServer"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_classes": [
+				"RealtimeServer"
+			]
+		}
+	],
+	"assets": {
+		"directory": "./dist/assets"
+	}
+}

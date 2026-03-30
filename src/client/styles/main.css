@@ -1,0 +1,73 @@
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #4F46E5;
+  --color-primary-hover: #4338CA;
+  --color-primary-light: #EEF2FF;
+
+  --color-bg: #FAFAF9;
+  --color-surface: #FFFFFF;
+  --color-border: #E7E5E4;
+  --color-border-hover: #D6D3D1;
+  --color-text: #1C1917;
+  --color-text-secondary: #57534E;
+  --color-text-muted: #A8A29E;
+
+  --color-success: #059669;
+  --color-success-bg: #ECFDF5;
+  --color-warning: #D97706;
+  --color-warning-bg: #FFFBEB;
+  --color-danger: #DC2626;
+  --color-danger-bg: #FEF2F2;
+
+  --font-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-heading: 'Bricolage Grotesque', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+
+  --radius-sm: 4px;
+}
+
+/* Base */
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Login page background gradient */
+.login-bg {
+  background-image:
+    radial-gradient(ellipse at 20% 50%, rgba(79, 70, 229, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(79, 70, 229, 0.04) 0%, transparent 50%);
+}
+
+
+/* Filter select */
+.filter-select {
+  @apply px-2 py-1 text-xs font-sans text-text-secondary bg-surface border border-border rounded-md cursor-pointer focus:outline-none focus:border-primary;
+  appearance: none;
+  padding-right: 1.5rem;
+  background-image: url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2210%22%20height%3D%2210%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23A8A29E%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22%2F%3E%3C%2Fsvg%3E');
+  background-size: 10px;
+  background-position: right 4px center;
+  background-repeat: no-repeat;
+}
+
+/* Email list item — needs Alpine .active and .is-new states */
+.email-item.active {
+  @apply bg-primary-light border-l-primary;
+}
+.email-item.is-new {
+  background-color: #FEFCE8;
+}
+
+/* Email tab — needs Alpine .active state */
+.email-tab {
+  @apply px-4 py-3 text-sm font-medium text-text-muted cursor-pointer border-b-2 border-b-transparent bg-transparent border-t-0 border-l-0 border-r-0 font-sans transition-colors;
+}
+.email-tab:hover {
+  @apply text-text-secondary;
+}
+.email-tab.active {
+  @apply text-primary border-b-primary;
+}
