@@ -6,7 +6,17 @@ Pair with the [sinkhole-laravel](https://github.com/frontier-sh/sinkhole-laravel
 
 ## Setup
 
-### 1. Create a GitHub OAuth App
+### 1. Fork and clone
+
+[Fork this repository](https://github.com/frontier-sh/sinkhole/fork), then clone your fork:
+
+```sh
+git clone https://github.com/<your-username>/sinkhole.git
+cd sinkhole
+npm install
+```
+
+### 2. Create a GitHub OAuth App
 
 Go to [github.com/settings/developers](https://github.com/settings/developers) and create an OAuth App:
 
@@ -14,7 +24,7 @@ Go to [github.com/settings/developers](https://github.com/settings/developers) a
 
 Note the Client ID and Client Secret.
 
-### 2. Create the D1 database
+### 3. Create the D1 database
 
 ```sh
 wrangler d1 create sinkhole-db
@@ -22,16 +32,10 @@ wrangler d1 create sinkhole-db
 
 Copy the `database_id` into `wrangler.jsonc`.
 
-### 3. Create the R2 bucket (for attachments)
+### 4. Create the R2 bucket (for attachments)
 
 ```sh
 wrangler r2 bucket create sinkhole-attachments
-```
-
-### 4. Run migrations
-
-```sh
-npm run db:migrate:prod
 ```
 
 ### 5. Set secrets
@@ -51,9 +55,28 @@ wrangler secret put GITHUB_ALLOWED_TEAM    # e.g. your-org/your-team
 ### 6. Deploy
 
 ```sh
-npm install
 npm run deploy
 ```
+
+### 7. Connect Workers Builds
+
+To auto-deploy when you push (and when you sync upstream updates):
+
+1. Go to **Cloudflare Dashboard > Workers & Pages > sinkhole > Settings > Builds**
+2. Click **Connect** and select your forked repository
+3. Set the build command to `npm run deploy`
+
+### Staying up to date
+
+Sync updates from upstream and your fork will auto-deploy via Workers Builds:
+
+```sh
+git fetch upstream
+git merge upstream/main
+git push
+```
+
+Or use GitHub's **Sync fork** button on your fork's page.
 
 ## Local development
 

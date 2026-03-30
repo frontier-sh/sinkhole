@@ -6,7 +6,6 @@
 		{
 			"binding": "DB",
 			"database_name": "sinkhole-db",
-			"database_id": "11ea67b4-fbbb-4954-9a6d-fa6fb86c47a0",
 			"migrations_dir": "migrations"
 		}
 	],
