@@ -2,6 +2,8 @@
 	"name": "sinkhole",
 	"compatibility_date": "2026-02-24",
 	"main": "./dist/index.js",
+	"workers_dev": true,
+	"preview_urls": false,
 	"d1_databases": [
 		{
 			"binding": "DB",
