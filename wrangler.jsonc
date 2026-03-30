@@ -1,6 +1,6 @@
 {
 	"name": "sinkhole",
-	"compatibility_date": "2025-01-01",
+	"compatibility_date": "2026-02-24",
 	"main": "./dist/index.js",
 	"d1_databases": [
 		{
