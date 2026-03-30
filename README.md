@@ -55,7 +55,7 @@ wrangler secret put GITHUB_ALLOWED_TEAM    # e.g. your-org/your-team
 ### 6. Deploy
 
 ```sh
-npm run deploy
+npm run build && npm run deploy
 ```
 
 ### 7. Connect Workers Builds
@@ -64,7 +64,8 @@ To auto-deploy when you push (and when you sync upstream updates):
 
 1. Go to **Cloudflare Dashboard > Workers & Pages > sinkhole > Settings > Builds**
 2. Click **Connect** and select your forked repository
-3. Set the build command to `npm run deploy`
+3. Set the **build command** to `npm run build`
+4. Set the **deploy command** to `npm run deploy`
 
 ### Staying up to date
 

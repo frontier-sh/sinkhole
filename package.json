@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "npm run build && wrangler dev",
     "build": "vite build && vite build --mode client && cp -r public/* dist/assets/ 2>/dev/null || true",
-    "deploy": "npm run build && wrangler d1 migrations apply sinkhole-db --remote && wrangler deploy",
+    "deploy": "wrangler d1 migrations apply sinkhole-db --remote && wrangler deploy",
     "db:migrate": "wrangler d1 migrations apply sinkhole-db --local",
     "db:migrate:prod": "wrangler d1 migrations apply sinkhole-db --remote"
   },

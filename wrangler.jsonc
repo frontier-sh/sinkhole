@@ -8,6 +8,8 @@
 		{
 			"binding": "DB",
 			"database_name": "sinkhole-db",
+			// Replace with your database_id from `wrangler d1 create sinkhole-db`
+			"database_id": "",
 			"migrations_dir": "migrations"
 		}
 	],
