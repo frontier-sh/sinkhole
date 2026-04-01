@@ -2,6 +2,8 @@
 
 A zero-infrastructure email trap for local development or staging environments. Runs as a Cloudflare Worker with D1 storage and a built-in web UI. Emails are POSTed over HTTP - no SMTP server needed.
 
+![Sinkhole's web UI](https://static.frontier.sh/projects/sinkhole/screenshots/screen2.jpeg)
+
 Pair with the [sinkhole-laravel](https://github.com/frontier-sh/sinkhole-laravel) package to capture all outgoing mail from your Laravel app.
 
 ## Setup
