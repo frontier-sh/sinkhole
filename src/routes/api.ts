@@ -5,6 +5,127 @@ import { createApiKey, listApiKeys, deleteApiKey } from '../services/api-keys';
 
 const api = new Hono<{ Bindings: Bindings; Variables: { githubUser: string } }>();
 
+// --- EML helpers ---
+
+function arrayBufferToBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 8192) {
+    const chunk = bytes.subarray(i, Math.min(i + 8192, bytes.length));
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+function wrapBase64(b64: string): string {
+  const lines: string[] = [];
+  for (let i = 0; i < b64.length; i += 76) {
+    lines.push(b64.slice(i, i + 76));
+  }
+  return lines.join('\r\n');
+}
+
+function buildEml(
+  email: { message_id: string | null; to: string; from: string; subject: string; html: string | null; text: string | null; headers: string | null; created_at: string },
+  attachments: { filename: string; content_type: string; base64: string }[],
+): string {
+  const crlf = '\r\n';
+  const lines: string[] = [];
+
+  // Standard headers
+  lines.push(`From: ${email.from}`);
+  lines.push(`To: ${email.to}`);
+  lines.push(`Subject: ${email.subject}`);
+  lines.push(`Date: ${new Date(email.created_at + 'Z').toUTCString()}`);
+  if (email.message_id) lines.push(`Message-ID: ${email.message_id}`);
+  lines.push('MIME-Version: 1.0');
+
+  // Custom headers from stored JSON
+  const skipHeaders = new Set(['from', 'to', 'subject', 'date', 'message-id', 'mime-version', 'content-type', 'content-transfer-encoding']);
+  if (email.headers) {
+    try {
+      const parsed = JSON.parse(email.headers);
+      for (const [key, value] of Object.entries(parsed)) {
+        if (!skipHeaders.has(key.toLowerCase())) {
+          lines.push(`${key}: ${value}`);
+        }
+      }
+    } catch {}
+  }
+
+  const hasText = !!email.text;
+  const hasHtml = !!email.html;
+  const hasAttachments = attachments.length > 0;
+
+  // Build body
+  if (!hasAttachments && !hasText && !hasHtml) {
+    // Empty body
+    lines.push(`Content-Type: text/plain; charset=utf-8`);
+    lines.push('');
+    lines.push('');
+  } else if (!hasAttachments && hasText && !hasHtml) {
+    lines.push('Content-Type: text/plain; charset=utf-8');
+    lines.push('Content-Transfer-Encoding: quoted-printable');
+    lines.push('');
+    lines.push(email.text!);
+  } else if (!hasAttachments && !hasText && hasHtml) {
+    lines.push('Content-Type: text/html; charset=utf-8');
+    lines.push('Content-Transfer-Encoding: quoted-printable');
+    lines.push('');
+    lines.push(email.html!);
+  } else {
+    // Need multipart
+    const mixedBoundary = 'mixed-' + crypto.randomUUID().replace(/-/g, '');
+    const altBoundary = 'alt-' + crypto.randomUUID().replace(/-/g, '');
+
+    if (hasAttachments) {
+      lines.push(`Content-Type: multipart/mixed; boundary="${mixedBoundary}"`);
+      lines.push('');
+      lines.push(`--${mixedBoundary}`);
+    }
+
+    if (hasText && hasHtml) {
+      lines.push(`Content-Type: multipart/alternative; boundary="${altBoundary}"`);
+      lines.push('');
+      lines.push(`--${altBoundary}`);
+      lines.push('Content-Type: text/plain; charset=utf-8');
+      lines.push('Content-Transfer-Encoding: quoted-printable');
+      lines.push('');
+      lines.push(email.text!);
+      lines.push(`--${altBoundary}`);
+      lines.push('Content-Type: text/html; charset=utf-8');
+      lines.push('Content-Transfer-Encoding: quoted-printable');
+      lines.push('');
+      lines.push(email.html!);
+      lines.push(`--${altBoundary}--`);
+    } else if (hasText) {
+      lines.push('Content-Type: text/plain; charset=utf-8');
+      lines.push('Content-Transfer-Encoding: quoted-printable');
+      lines.push('');
+      lines.push(email.text!);
+    } else if (hasHtml) {
+      lines.push('Content-Type: text/html; charset=utf-8');
+      lines.push('Content-Transfer-Encoding: quoted-printable');
+      lines.push('');
+      lines.push(email.html!);
+    }
+
+    if (hasAttachments) {
+      for (const att of attachments) {
+        lines.push(`--${mixedBoundary}`);
+        lines.push(`Content-Type: ${att.content_type}; name="${att.filename}"`);
+        lines.push(`Content-Disposition: attachment; filename="${att.filename}"`);
+        lines.push('Content-Transfer-Encoding: base64');
+        lines.push('');
+        lines.push(wrapBase64(att.base64));
+      }
+      lines.push(`--${mixedBoundary}--`);
+    }
+  }
+
+  return lines.join(crlf);
+}
+
 api.use('*', sessionAuthApi);
 
 // GET /api/channels — List distinct channels
@@ -210,6 +331,49 @@ api.post('/emails/bulk-archive', async (c) => {
     await c.env.DB.prepare(`UPDATE emails SET status = 'archived' WHERE id IN (${placeholders})`).bind(...batch).run();
   }
   return c.json({ archived: ids.length });
+});
+
+// GET /api/emails/:id/eml — Download email as .eml (RFC 2822 MIME)
+api.get('/emails/:id/eml', async (c) => {
+  const id = c.req.param('id');
+  const email = await c.env.DB.prepare('SELECT * FROM emails WHERE id = ?')
+    .bind(id)
+    .first<{ id: string; message_id: string | null; to: string; from: string; subject: string; html: string | null; text: string | null; headers: string | null; created_at: string }>();
+
+  if (!email) return c.json({ error: 'Email not found' }, 404);
+
+  const atts = await c.env.DB.prepare(
+    'SELECT id, filename, content_type, r2_key FROM attachments WHERE email_id = ? ORDER BY created_at',
+  ).bind(id).all<{ id: string; filename: string; content_type: string; r2_key: string }>();
+
+  // Fetch attachment binaries from R2 and base64-encode
+  const attachmentParts: { filename: string; content_type: string; base64: string }[] = [];
+  for (const att of atts.results) {
+    const obj = await c.env.ATTACHMENTS.get(att.r2_key);
+    if (!obj) continue;
+    const buf = await obj.arrayBuffer();
+    attachmentParts.push({
+      filename: att.filename,
+      content_type: att.content_type,
+      base64: arrayBufferToBase64(buf),
+    });
+  }
+
+  const eml = buildEml(email, attachmentParts);
+
+  // Sanitize subject for filename
+  const safeName = email.subject
+    .replace(/[\/\\:?*<>|"]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60) || `email-${id}`;
+
+  return new Response(eml, {
+    headers: {
+      'Content-Type': 'message/rfc822',
+      'Content-Disposition': `attachment; filename="${safeName}.eml"`,
+    },
+  });
 });
 
 // DELETE /api/emails/:id — Delete single email and its attachments
