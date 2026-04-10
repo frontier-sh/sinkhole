@@ -60,7 +60,8 @@ export const InboxPage: FC<InboxProps> = ({ githubUser, authDisabled }) => {
 
               <!-- Filter Bar — matches detail header height -->
               <div class="shrink-0 border-b border-border px-3 pt-3 pb-2 flex flex-col gap-1.5 min-h-20">
-                <div class="flex gap-1.5">
+                <div class="flex gap-1.5 items-center">
+                  <input type="checkbox" class="shrink-0 w-4 h-4 accent-primary cursor-pointer" :checked="emails.length > 0 && isAllSelected()" @click="toggleSelectAll()" title="Select all" x-show="emails.length > 0" />
                   <input type="text" class="flex-1 px-2 py-1 text-xs font-sans text-text bg-surface border border-border rounded-md focus:outline-none focus:border-primary placeholder:text-text-muted" placeholder="Search emails..." x-model="searchQuery" @input.debounce.300ms="applyFilters()" />
                   <select class="filter-select" @change="statusFilter = $event.target.value; applyFilters()" :value="statusFilter">
                     <option value="">Inbox</option>
@@ -94,6 +95,22 @@ export const InboxPage: FC<InboxProps> = ({ githubUser, authDisabled }) => {
                 </div>
               </div>
 
+              <!-- Bulk Action Bar -->
+              <div class="shrink-0 border-b border-border px-3 py-2 flex items-center gap-2 bg-primary-light" x-show="selectedIds.length > 0" x-cloak>
+                <span class="text-xs font-semibold text-primary" x-text="selectedIds.length + ' selected'"></span>
+                <div class="flex items-center gap-1 ml-auto">
+                  <button class="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-surface text-text-secondary border border-border hover:bg-bg hover:border-border-hover transition-colors cursor-pointer" @click="openBulkConfirm('archive')">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"></polyline><rect x="1" y="3" width="22" height="5"></rect><line x1="10" y1="12" x2="14" y2="12"></line></svg>
+                    Archive
+                  </button>
+                  <button class="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-danger text-white border border-danger hover:bg-[#B91C1C] hover:border-[#B91C1C] transition-colors cursor-pointer" @click="openBulkConfirm('delete')">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    Delete
+                  </button>
+                  <button class="text-xs text-text-muted hover:text-text-secondary transition-colors cursor-pointer bg-transparent border-0 font-sans ml-1" @click="selectedIds = []">Deselect</button>
+                </div>
+              </div>
+
               <!-- Email List Items -->
               <div class="flex-1 overflow-y-auto">
               <template x-if="emails.length === 0 && !loading">
@@ -104,16 +121,19 @@ export const InboxPage: FC<InboxProps> = ({ githubUser, authDisabled }) => {
               </template>
               <template x-for="email in emails" :key="email.id">
                 <div
-                  class="email-item h-20 flex flex-col justify-center px-4 border-b border-border cursor-pointer transition-colors border-l-3 border-l-transparent hover:bg-bg"
+                  class="email-item h-20 flex items-center px-4 border-b border-border cursor-pointer transition-colors border-l-3 border-l-transparent hover:bg-bg"
                   :class="{ 'active': selected === email.id, 'is-new': email._new }"
                   @click="selectEmail(email.id)"
                 >
-                  <div class="flex items-center justify-between">
-                    <div class="text-sm mb-0.5 truncate" :class="email.status === 'unread' ? 'font-bold text-text' : 'font-medium text-text-secondary'" x-text="email.from"></div>
-                    <span class="inline-block px-1.5 py-px text-[0.65rem] font-semibold leading-[1.4] text-text-muted bg-bg border border-border rounded-full whitespace-nowrap shrink-0" x-text="email.channel" x-show="!channelFilter && channels.length > 1"></span>
+                  <input type="checkbox" class="shrink-0 mr-3 w-4 h-4 accent-primary cursor-pointer" :checked="selectedIds.includes(email.id)" @click.stop="toggleSelect(email.id)" />
+                  <div class="flex-1 min-w-0 flex flex-col justify-center">
+                    <div class="flex items-center justify-between">
+                      <div class="text-sm mb-0.5 truncate" :class="email.status === 'unread' ? 'font-bold text-text' : 'font-medium text-text-secondary'" x-text="email.from"></div>
+                      <span class="inline-block px-1.5 py-px text-[0.65rem] font-semibold leading-[1.4] text-text-muted bg-bg border border-border rounded-full whitespace-nowrap shrink-0" x-text="email.channel" x-show="!channelFilter && channels.length > 1"></span>
+                    </div>
+                    <div class="text-sm text-text-secondary truncate mb-0.5" x-text="email.subject"></div>
+                    <div class="text-xs text-text-muted" x-text="timeAgo(email.created_at)"></div>
                   </div>
-                  <div class="text-sm text-text-secondary truncate mb-0.5" x-text="email.subject"></div>
-                  <div class="text-xs text-text-muted" x-text="timeAgo(email.created_at)"></div>
                 </div>
               </template>
               </div>
@@ -295,6 +315,39 @@ export const InboxPage: FC<InboxProps> = ({ githubUser, authDisabled }) => {
               </div>
             </div>
           </template>
+          <!-- Bulk Action Confirmation Modal -->
+          <template x-if="showBulkConfirm">
+            <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[200]" @click.self="closeBulkConfirm()">
+              <div class="bg-surface border border-border rounded-xl p-6 w-full max-w-[400px] shadow-[0_20px_60px_-12px_rgba(0,0,0,0.15)]">
+                <div class="flex items-center justify-between mb-4">
+                  <h2 class="font-heading text-lg font-bold tracking-[-0.02em]" x-text="bulkAction === 'delete' ? 'Delete emails' : 'Archive emails'"></h2>
+                  <button class="bg-transparent border-0 cursor-pointer text-text-muted p-1 rounded-sm hover:text-text hover:bg-bg transition-colors" @click="closeBulkConfirm()">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18"></line>
+                      <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                  </button>
+                </div>
+                <p class="text-sm text-text-secondary mb-6">
+                  <template x-if="bulkAction === 'delete'">
+                    <span>Are you sure you want to permanently delete <strong class="text-text" x-text="selectedIds.length"></strong> <span x-text="selectedIds.length === 1 ? 'email' : 'emails'"></span>? This action cannot be undone.</span>
+                  </template>
+                  <template x-if="bulkAction === 'archive'">
+                    <span>Are you sure you want to archive <strong class="text-text" x-text="selectedIds.length"></strong> <span x-text="selectedIds.length === 1 ? 'email' : 'emails'"></span>?</span>
+                  </template>
+                </p>
+                <div class="flex justify-end gap-2">
+                  <button class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-md bg-surface text-text-secondary border border-border hover:bg-bg hover:border-border-hover transition-colors cursor-pointer" @click="closeBulkConfirm()">Cancel</button>
+                  <button
+                    class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-md text-white border transition-colors cursor-pointer"
+                    :class="bulkAction === 'delete' ? 'bg-danger border-danger hover:bg-[#B91C1C] hover:border-[#B91C1C]' : 'bg-primary border-primary hover:bg-primary-hover hover:border-primary-hover'"
+                    @click="executeBulkAction()"
+                    x-text="bulkAction === 'delete' ? 'Delete ' + selectedIds.length + (selectedIds.length === 1 ? ' email' : ' emails') : 'Archive ' + selectedIds.length + (selectedIds.length === 1 ? ' email' : ' emails')"
+                  ></button>
+                </div>
+              </div>
+            </div>
+          </template>
           `)}
 
         </div>
@@ -325,6 +378,9 @@ export const InboxPage: FC<InboxProps> = ({ githubUser, authDisabled }) => {
             dateTo: '',
             showFilters: false,
             statusFilter: '',
+            selectedIds: [],
+            showBulkConfirm: false,
+            bulkAction: null,
 
             init() {
               this.fetchChannels();
@@ -365,6 +421,7 @@ export const InboxPage: FC<InboxProps> = ({ githubUser, authDisabled }) => {
             applyFilters() {
               this.selected = null;
               this.detail = null;
+              this.selectedIds = [];
               this.fetchEmails();
             },
 
@@ -455,6 +512,66 @@ export const InboxPage: FC<InboxProps> = ({ githubUser, authDisabled }) => {
                 this.selected = null;
                 this.detail = null;
               }
+            },
+
+            toggleSelect(id) {
+              if (this.selectedIds.includes(id)) {
+                this.selectedIds = this.selectedIds.filter(i => i !== id);
+              } else {
+                this.selectedIds = [...this.selectedIds, id];
+              }
+            },
+
+            toggleSelectAll() {
+              if (this.isAllSelected()) {
+                this.selectedIds = [];
+              } else {
+                this.selectedIds = this.emails.map(e => e.id);
+              }
+            },
+
+            isAllSelected() {
+              return this.emails.length > 0 && this.emails.every(e => this.selectedIds.includes(e.id));
+            },
+
+            openBulkConfirm(action) {
+              this.bulkAction = action;
+              this.showBulkConfirm = true;
+            },
+
+            closeBulkConfirm() {
+              this.showBulkConfirm = false;
+              this.bulkAction = null;
+            },
+
+            async executeBulkAction() {
+              const ids = [...this.selectedIds];
+              let res;
+              if (this.bulkAction === 'delete') {
+                res = await fetch('/api/emails/bulk-delete', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ ids }),
+                });
+              } else if (this.bulkAction === 'archive') {
+                res = await fetch('/api/emails/bulk-archive', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ ids }),
+                });
+              }
+              if (!res || !res.ok) {
+                alert('Something went wrong. Please try again.');
+                this.closeBulkConfirm();
+                return;
+              }
+              this.emails = this.emails.filter(e => !ids.includes(e.id));
+              if (ids.includes(this.selected)) {
+                this.selected = null;
+                this.detail = null;
+              }
+              this.selectedIds = [];
+              this.closeBulkConfirm();
             },
 
             async clearAll() {
