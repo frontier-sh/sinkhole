@@ -148,6 +148,13 @@ export const InboxPage: FC<InboxProps> = ({ githubUser, authDisabled }) => {
                         </div>
                       </div>
                       <div class="flex items-center gap-1 shrink-0">
+                        <a :href="'/api/emails/' + detail.id + '/eml'" class="inline-flex items-center justify-center px-3 py-1 text-xs rounded-md bg-transparent text-text-secondary border border-transparent hover:bg-bg hover:text-text transition-colors cursor-pointer no-underline" title="Download .eml">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                          </svg>
+                        </a>
                         <button class="inline-flex items-center justify-center px-3 py-1 text-xs rounded-md bg-transparent text-text-secondary border border-transparent hover:bg-bg hover:text-text transition-colors cursor-pointer" @click="archiveEmail(detail.id)" title="Archive email" x-show="detail.status !== 'archived'">
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <polyline points="21 8 21 21 3 21 3 8"></polyline>
