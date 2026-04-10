@@ -162,6 +162,56 @@ api.get('/emails/:id/attachments/:aid', async (c) => {
   });
 });
 
+// Process ids in chunks to stay within D1's 100 bound-parameter limit
+const CHUNK_SIZE = 100;
+function chunk<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size));
+  return chunks;
+}
+
+// POST /api/emails/bulk-delete — Delete multiple emails and their attachments
+api.post('/emails/bulk-delete', async (c) => {
+  let body: any;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+
+  const ids: string[] = body.ids;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return c.json({ error: 'ids must be a non-empty array' }, 422);
+  }
+
+  for (const batch of chunk(ids, CHUNK_SIZE)) {
+    const placeholders = batch.map(() => '?').join(',');
+    const atts = await c.env.DB.prepare(`SELECT r2_key FROM attachments WHERE email_id IN (${placeholders})`)
+      .bind(...batch)
+      .all<{ r2_key: string }>();
+    await Promise.all(atts.results.map((a) => c.env.ATTACHMENTS.delete(a.r2_key)));
+
+    await c.env.DB.batch([
+      c.env.DB.prepare(`DELETE FROM attachments WHERE email_id IN (${placeholders})`).bind(...batch),
+      c.env.DB.prepare(`DELETE FROM emails WHERE id IN (${placeholders})`).bind(...batch),
+    ]);
+  }
+  return c.body(null, 204);
+});
+
+// POST /api/emails/bulk-archive — Archive multiple emails
+api.post('/emails/bulk-archive', async (c) => {
+  let body: any;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+
+  const ids: string[] = body.ids;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return c.json({ error: 'ids must be a non-empty array' }, 422);
+  }
+
+  for (const batch of chunk(ids, CHUNK_SIZE)) {
+    const placeholders = batch.map(() => '?').join(',');
+    await c.env.DB.prepare(`UPDATE emails SET status = 'archived' WHERE id IN (${placeholders})`).bind(...batch).run();
+  }
+  return c.json({ archived: ids.length });
+});
+
 // DELETE /api/emails/:id — Delete single email and its attachments
 api.delete('/emails/:id', async (c) => {
   const id = c.req.param('id');
