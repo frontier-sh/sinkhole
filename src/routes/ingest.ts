@@ -40,12 +40,19 @@ ingest.post('/', async (c) => {
   const headersJson = headers && typeof headers === 'object' ? JSON.stringify(headers) : null;
   const createdAt = new Date().toISOString().replace('T', ' ').slice(0, 19);
 
-  await c.env.DB.prepare(
-    `INSERT INTO emails (id, message_id, "to", "from", subject, html, text, headers, channel)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  )
-    .bind(id, message_id ?? null, to, from, trimmedSubject, truncatedHtml, truncatedText, headersJson, channelValue)
-    .run();
+  // Metadata goes in the lean `emails` table; the large body columns go in
+  // `email_bodies` so list/single-metadata reads never touch them. The legacy
+  // emails.html/text/headers columns are left NULL.
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      `INSERT INTO emails (id, message_id, "to", "from", subject, channel)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).bind(id, message_id ?? null, to, from, trimmedSubject, channelValue),
+    c.env.DB.prepare(
+      `INSERT INTO email_bodies (email_id, html, text, headers)
+       VALUES (?, ?, ?, ?)`,
+    ).bind(id, truncatedHtml, truncatedText, headersJson),
+  ]);
 
   // Store attachments in R2
   let attachmentCount = 0;

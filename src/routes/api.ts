@@ -126,6 +126,32 @@ function buildEml(
   return lines.join(crlf);
 }
 
+// Fetch an email's bodies, preferring the split-out `email_bodies` table and
+// falling back to the legacy inline columns for rows created before the split
+// (or not yet processed by scripts/split-bodies-backfill.mjs). Presence of the
+// email_bodies row — not whether html is null — decides which source wins.
+async function fetchBodies(
+  db: D1Database,
+  id: string,
+): Promise<{ html: string | null; text: string | null; headers: string | null }> {
+  const split = await db
+    .prepare('SELECT html, text, headers FROM email_bodies WHERE email_id = ?')
+    .bind(id)
+    .first<{ html: string | null; text: string | null; headers: string | null }>();
+  if (split) return split;
+
+  const legacy = await db
+    .prepare('SELECT html, text, headers FROM emails WHERE id = ?')
+    .bind(id)
+    .first<{ html: string | null; text: string | null; headers: string | null }>();
+  return legacy ?? { html: null, text: null, headers: null };
+}
+
+// Metadata columns only — no body column is ever selected. Reads are fast once
+// a row's bodies live in email_bodies and its legacy columns are NULL (a lean
+// row); the backfill script gets every existing row there.
+const EMAIL_META_COLUMNS = 'id, message_id, "to", "from", subject, channel, created_at, status';
+
 api.use('*', sessionAuthApi);
 
 // GET /api/channels — List distinct channels
@@ -200,20 +226,24 @@ api.get('/emails', async (c) => {
 // GET /api/emails/:id — Get full email record (marks as read)
 api.get('/emails/:id', async (c) => {
   const id = c.req.param('id');
-  const email = await c.env.DB.prepare('SELECT * FROM emails WHERE id = ?')
-    .bind(id)
-    .first();
+  // Lean metadata read + body read run in parallel (both keyed by id).
+  const [email, body] = await Promise.all([
+    c.env.DB.prepare(`SELECT ${EMAIL_META_COLUMNS} FROM emails WHERE id = ?`)
+      .bind(id)
+      .first<Record<string, unknown> & { status?: string }>(),
+    fetchBodies(c.env.DB, id),
+  ]);
 
   if (!email) {
     return c.json({ error: 'Email not found' }, 404);
   }
 
-  if ((email as any).status === 'unread') {
+  if (email.status === 'unread') {
     await c.env.DB.prepare('UPDATE emails SET status = ? WHERE id = ?').bind('read', id).run();
-    (email as any).status = 'read';
+    email.status = 'read';
   }
 
-  return c.json(email);
+  return c.json({ ...email, html: body.html, text: body.text, headers: body.headers });
 });
 
 // PATCH /api/emails/:id/status — Update email status (read, unread, archived)
@@ -234,15 +264,13 @@ api.patch('/emails/:id/status', async (c) => {
 // GET /api/emails/:id/html — Get raw HTML body for iframe
 api.get('/emails/:id/html', async (c) => {
   const id = c.req.param('id');
-  const email = await c.env.DB.prepare('SELECT html FROM emails WHERE id = ?')
-    .bind(id)
-    .first<{ html: string | null }>();
+  const body = await fetchBodies(c.env.DB, id);
 
-  if (!email || !email.html) {
+  if (!body.html) {
     return c.html('<p style="color:#888;font-family:sans-serif;padding:1rem;">No HTML content</p>');
   }
 
-  return c.html(email.html);
+  return c.html(body.html);
 });
 
 // GET /api/emails/:id/attachments — List attachments for an email
@@ -310,6 +338,7 @@ api.post('/emails/bulk-delete', async (c) => {
 
     await c.env.DB.batch([
       c.env.DB.prepare(`DELETE FROM attachments WHERE email_id IN (${placeholders})`).bind(...batch),
+      c.env.DB.prepare(`DELETE FROM email_bodies WHERE email_id IN (${placeholders})`).bind(...batch),
       c.env.DB.prepare(`DELETE FROM emails WHERE id IN (${placeholders})`).bind(...batch),
     ]);
   }
@@ -336,11 +365,14 @@ api.post('/emails/bulk-archive', async (c) => {
 // GET /api/emails/:id/eml — Download email as .eml (RFC 2822 MIME)
 api.get('/emails/:id/eml', async (c) => {
   const id = c.req.param('id');
-  const email = await c.env.DB.prepare('SELECT * FROM emails WHERE id = ?')
+  const meta = await c.env.DB.prepare(`SELECT ${EMAIL_META_COLUMNS} FROM emails WHERE id = ?`)
     .bind(id)
-    .first<{ id: string; message_id: string | null; to: string; from: string; subject: string; html: string | null; text: string | null; headers: string | null; created_at: string }>();
+    .first<{ id: string; message_id: string | null; to: string; from: string; subject: string; created_at: string }>();
 
-  if (!email) return c.json({ error: 'Email not found' }, 404);
+  if (!meta) return c.json({ error: 'Email not found' }, 404);
+
+  const body = await fetchBodies(c.env.DB, id);
+  const email = { ...meta, html: body.html, text: body.text, headers: body.headers };
 
   const atts = await c.env.DB.prepare(
     'SELECT id, filename, content_type, r2_key FROM attachments WHERE email_id = ? ORDER BY created_at',
@@ -385,8 +417,11 @@ api.delete('/emails/:id', async (c) => {
     .all<{ r2_key: string }>();
   await Promise.all(atts.results.map((a) => c.env.ATTACHMENTS.delete(a.r2_key)));
 
-  await c.env.DB.prepare('DELETE FROM attachments WHERE email_id = ?').bind(id).run();
-  await c.env.DB.prepare('DELETE FROM emails WHERE id = ?').bind(id).run();
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM attachments WHERE email_id = ?').bind(id),
+    c.env.DB.prepare('DELETE FROM email_bodies WHERE email_id = ?').bind(id),
+    c.env.DB.prepare('DELETE FROM emails WHERE id = ?').bind(id),
+  ]);
   return c.body(null, 204);
 });
 
@@ -395,8 +430,11 @@ api.delete('/emails', async (c) => {
   const atts = await c.env.DB.prepare('SELECT r2_key FROM attachments').all<{ r2_key: string }>();
   await Promise.all(atts.results.map((a) => c.env.ATTACHMENTS.delete(a.r2_key)));
 
-  await c.env.DB.prepare('DELETE FROM attachments').run();
-  await c.env.DB.prepare('DELETE FROM emails').run();
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM attachments'),
+    c.env.DB.prepare('DELETE FROM email_bodies'),
+    c.env.DB.prepare('DELETE FROM emails'),
+  ]);
   return c.body(null, 204);
 });
 
