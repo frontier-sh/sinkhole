@@ -4,6 +4,7 @@ import auth from './routes/auth';
 import ingest from './routes/ingest';
 import api from './routes/api';
 import pages from './routes/pages';
+import { kickBodySplit } from './services/bodies';
 export { RealtimeServer } from './realtime';
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -28,4 +29,11 @@ app.route('/ingest', ingest);
 app.route('/api', api);
 app.route('/', pages);
 
-export default app;
+export default {
+  fetch: (request: Request, env: Bindings, ctx: ExecutionContext) => {
+    // Advances the one-time email-body split in the background until it's done,
+    // then latches off. No cron; costs nothing once complete.
+    kickBodySplit(env.DB, ctx);
+    return app.fetch(request, env, ctx);
+  },
+};
